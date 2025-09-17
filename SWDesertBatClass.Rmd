@@ -1,0 +1,225 @@
+---
+title: "SWDesertBatClass"
+author: "Patrick D. lorch"
+date: "2025-09-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Setup
+
+
+```{r setuplibs}
+library(readr)
+library(dplyr)
+library(readxl)
+library(stringr)
+# library(devtools)
+# install.packages("DataEditR")
+# install_github("DillonHammill/DataEditR")
+# library(DataEditR)
+library(writexl)
+```
+
+## Import registrations
+
+For the process below to work, before you import the registrations, you need to add 'Withdrawn' and 'StudentRegisteredAssistant' columns and add "Y" to indicate these are true.
+
+```{r registrations}
+infile = file.path("2025",
+                   "sw-desert-bats-class-registration-2025-09-16 (1).csv")
+registered <- read_csv(infile, 
+     col_types = cols(`Entry Date` = col_datetime(format = "%m/%d/%Y %H:%M"), 
+         `Date Updated` = col_datetime(format = "%m/%d/%Y %H:%M"), 
+         `Payment Date` = col_datetime(format = "%m/%d/%Y %H:%M")))
+
+```
+
+
+## Desert Studies forms
+
+### Registration form
+
+Import registration form to match later.
+
+Change problem entries in spreadsheet next time. Doing this with `replace` is too cumbersome.  So is 
+  * registered_dsc$newitem[registered_dsc$Name == "Patrick Lorch"] = "Text that should be here" and 
+  * registered_dsc$olditem[registered_dsc$Name == "Patrick Lorch"] = ""
+
+```{r dscformreg}
+dsc_infile = file.path("2025", 
+                       "Workshop Materials", 
+                       "Re_ [External] Roster template", 
+                       "DSC-group-roster-template 2.0.xlsx")
+dscform <- read_excel(dsc_infile, 
+     skip = 1)
+
+names(dscform)
+names(registered)
+
+registered_dsc = registered %>%
+  select(`Name of Attendee (First)`,
+         `Name of Attendee (Last)`,
+         Role = `Class Role`,
+         "Shared quarters gender preference" =`Room gender preference`,
+         "Institution" = Organization,
+         "Emergency contact name" = Name,
+         "Emerg. contact relationship" = Relationship,
+         "Emergency contact phone" = Phone...20,
+         "Special accommodations needed? Describe." =
+           `Special accommodations needed`,
+         `Roommate(s) request`,
+         `Other comment`,
+         `Food allergies and dietary restrictions`,
+         Withdrawn,
+         StudentRegisteredAssistant
+         ) %>%
+  filter(is.na(Withdrawn)) %>%
+  mutate(Name = paste(`Name of Attendee (First)`,
+                      `Name of Attendee (Last)`,
+                      sep = " "),
+         Role = str_split(Role, "\\|", simplify = TRUE)[ , 1],
+         Role = replace(Role, 
+                        StudentRegisteredAssistant == "Y", 
+                        "Student"))
+
+# Fix things people entered wrong
+# Don't do this next time.
+registered_dsc2 = registered_dsc %>%
+  mutate(`Special accommodations needed? Describe.` = 
+           replace(`Special accommodations needed? Describe.`,
+                                   Name == "Patrick Lorch",
+                                   NA),
+         `Special accommodations needed? Describe.` = 
+           replace(`Special accommodations needed? Describe.`,
+                                   Name == "William Rainey",
+                                   NA),
+         `Other comment` = 
+           replace(`Other comment`,
+                                   Name == "William Rainey",
+                                   "Will share room in research trailer with Pat Brown"),
+         `Special accommodations needed? Describe.` = 
+           replace(`Special accommodations needed? Describe.`,
+                                   Name == "Audrey Forde",
+                                   NA),
+         `Other comment` = 
+           replace(`Other comment`,
+                                   Name == "Audrey Forde",
+                                   "Can be bunked in same as father, Andrew Forde."),
+         `Special accommodations needed? Describe.` = 
+           replace(`Special accommodations needed? Describe.`,
+                                   Name == "Cindy Pencek",
+                                   NA),
+         `Food allergies and dietary restrictions` = 
+           replace(`Food allergies and dietary restrictions`,
+                                   Name == "Cindy Pencek",
+                                   "vegetarian meals preferred"),
+         `Special accommodations needed? Describe.` = 
+           replace(`Special accommodations needed? Describe.`,
+                                   Name == "Patricia Brown",
+                                   NA),
+         `Food allergies and dietary restrictions` = 
+           replace(`Food allergies and dietary restrictions`,
+                                   Name == "Patricia Brown",
+                                   "Dietary restrictions: Vegetarian. Allergy to all spicy pepper: black, white, pink and All varieties if chili pepper (including paprika)."),
+         `Other comment` = 
+           replace(`Other comment`,
+                   Name == "Patricia Brown",
+                   "Will stay in Research trailer with other assistants."),
+         `Other comment` = 
+           replace(`Other comment`,
+                   Name == "Leo Simone",
+                   NA)
+         )
+# Combine stuff with roommate requests
+registered_dsc3 = registered_dsc2 %>%
+  mutate("Any additional needs?" = 
+           paste("Rooming requests:",
+                 `Other comment`, ";",
+                 `Roommate(s) request`))
+registered_dsc3 = registered_dsc3 %>%
+  mutate(`Any additional needs?` = 
+           replace(`Any additional needs?`,
+                   `Any additional needs?` == "Rooming requests: NA ; NA",
+                   "NA")) 
+
+
+```
+
+```{r dscformfood}
+DSC_Food_Service_Reservation = 
+  read_excel(file.path("2025",
+                       "Workshop Materials",
+                       "Re_ [External] Roster template",
+                       "DSC Food Service Reservation.xlsx"), 
+     sheet = "Diet restrictions & allergens", 
+     skip = 8)
+names(DSC_Food_Service_Reservation)
+
+
+```
+
+
+## Reformat to match DSC forms
+
+Rather than try to edit details in R, export to xlsx and edit there.
+
+
+```{r reformat}
+names(dscform)
+names(registered_dsc3)
+
+registered_dsc3$Visitor = 1:length(registered_dsc3$Name)
+registered_dsc4 = registered_dsc3 %>%
+  select(Visitor,
+         Name,
+         Role,
+         `Shared quarters gender preference`,
+         `Special accommodations needed? Describe.`,
+         Institution,
+         `Emergency contact name`,
+         `Emerg. contact relationship`,
+         `Emergency contact phone`,
+         `Any additional needs?`)
+
+
+dietary = registered_dsc3 %>%
+  select(Visitor, 
+         `Additional Comments:` = 
+           `Food allergies and dietary restrictions`) %>%
+  mutate(Vegan = if_else(str_detect(`Additional Comments:`,
+                                    "egan"), "X", NA),
+         Vegetarian = if_else(str_detect(`Additional Comments:`,
+                                         "egetarian") |
+                                str_detect(`Additional Comments:`,
+                                         "egan"),
+                              "X", NA),
+         "Gluten" = "",
+         "Dairy" = "",
+         "Eggs*" = "",
+         "Soy" = "",
+         "Peanuts" = "",
+         "Almonds" = "",
+         "Cashews" = "",
+         "Avocado" = "",
+         "Citrus" = "",
+         "Melon" = "",
+         "Fish" = "",
+         "Crustaceans" = "",
+         "Mollusks" = "",
+         "Other (describe)" = "") %>%
+  relocate(`Additional Comments:`, .after = `Other (describe)`)
+
+# This is too shitty
+# dietary2 = data_edit(dietary)
+write_xlsx(dietary, path = 
+             file.path(dirname(infile),
+                       paste0(dirname(infile),"dietary.xlsx")))
+write_xlsx(registered_dsc4, path = 
+             file.path(dirname(infile),
+                       paste0(dirname(infile),"registered.xlsx")))
+
+```
+
